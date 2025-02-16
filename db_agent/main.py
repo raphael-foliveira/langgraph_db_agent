@@ -1,6 +1,5 @@
 from dotenv import load_dotenv
-from pydantic import Field
-from typing import TypedDict
+from typing import TypedDict, Annotated
 import json
 import logging
 from psycopg_pool import ConnectionPool
@@ -16,7 +15,6 @@ from langchain_core.messages import HumanMessage, ToolMessage, BaseMessage
 from langgraph.checkpoint.postgres import PostgresSaver
 import os
 
-from typing_extensions import Annotated
 
 load_dotenv()
 
