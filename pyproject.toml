@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "db_agent"
+version = "0.1.0"
+description = ""
+authors = ["Raphael Oliveira <raphael.foliveira1@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+langgraph = "^0.2.72"
+langsmith = "^0.3.8"
+langchain-openai = "^0.3.5"
+python-dotenv = "^1.0.1"
+langchain-postgres = "^0.0.13"
+langgraph-checkpoint-postgres = "^2.0.14"
+ipython = "^8.32.0"
+psycopg = "^3.2.4"
+psycopg-pool = "^3.2.4"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
