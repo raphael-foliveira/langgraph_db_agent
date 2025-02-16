@@ -94,7 +94,7 @@ def create_database_node(llm: ChatOpenAI):
         result = llm_with_tools.invoke(state["messages"])
         return {
             "messages": [result],
-            "database_schema": {},
+            "database_schema": state.get("database_schema", {}),
         }
 
     return database_node
