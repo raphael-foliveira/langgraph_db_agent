@@ -11,7 +11,7 @@ from langgraph.graph import StateGraph, add_messages, START, END
 from langgraph.graph.state import CompiledStateGraph, RunnableConfig
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage, BaseMessage
 from langgraph.checkpoint.postgres import PostgresSaver
 import os
 
@@ -26,7 +26,7 @@ connection_pool = ConnectionPool(
 
 
 class DatabaseState(TypedDict):
-    messages: Annotated[list, add_messages]
+    messages: Annotated[list[BaseMessage], add_messages]
     database_schema: Annotated[dict, "The current database schema"]
 
 
@@ -50,6 +50,7 @@ def run_sql_tool(query: str):
     with connection_pool.connection() as db:
         with db.cursor() as cursor:
             cursor.execute(query)  # type: ignore
+            return cursor.fetchall()
 
 
 @tool
@@ -126,7 +127,7 @@ if __name__ == "__main__":
                     break
 
                 stream_graph_updates(
-                    graph, user_input, {"configurable": {"thread_id": "13"}}
+                    graph, user_input, {"configurable": {"thread_id": "14"}}
                 )
         except Exception:
             logging.exception("An error occurred")
