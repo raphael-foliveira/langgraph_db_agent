@@ -21,7 +21,6 @@ OPENAI_API_KEY=your_openai_api_key
 
 Then, run the following command to start the program:
 
-````
-```bash
+```
 poetry run python main.py
-````
+```
