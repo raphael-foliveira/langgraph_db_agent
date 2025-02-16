@@ -12,6 +12,7 @@ from langgraph.graph.state import CompiledStateGraph, RunnableConfig
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage, ToolMessage, BaseMessage
+from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.postgres import PostgresSaver
 import os
 
@@ -81,7 +82,7 @@ def get_current_database_schema_tool():
     return schema_dict
 
 
-def create_database_node(llm: ChatOpenAI):
+def create_database_node(llm: BaseChatModel):
     llm_with_tools = llm.bind_tools([run_sql_tool, get_current_database_schema_tool])
 
     def database_node(state: DatabaseState) -> DatabaseState:
