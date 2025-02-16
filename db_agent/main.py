@@ -51,8 +51,10 @@ def run_sql_tool(query: str):
     with connection_pool.connection() as db:
         with db.cursor() as cursor:
             cursor.execute(query)  # type: ignore
-            if cursor.rowcount > 0:
+            if cursor.description:
                 return cursor.fetchall()
+            db.commit()
+            return "Query executed successfully"
 
 
 @tool
