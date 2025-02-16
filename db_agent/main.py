@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from pydantic import Field
 from typing import TypedDict
 import json
 import logging
@@ -50,7 +51,8 @@ def run_sql_tool(query: str):
     with connection_pool.connection() as db:
         with db.cursor() as cursor:
             cursor.execute(query)  # type: ignore
-            return cursor.fetchall()
+            if cursor.rowcount > 0:
+                return cursor.fetchall()
 
 
 @tool
