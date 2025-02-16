@@ -115,6 +115,8 @@ if __name__ == "__main__":
     with connection_pool.connection() as db:
         checkpointer = PostgresSaver(conn=db)
 
+        checkpointer.setup()
+
         graph = builder.compile(checkpointer=checkpointer)
         try:
             while True:
