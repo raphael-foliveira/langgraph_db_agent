@@ -22,5 +22,5 @@ OPENAI_API_KEY=your_openai_api_key
 Then, run the following command to start the program:
 
 ```
-poetry run python main.py
+poetry run python db_agent/main.py
 ```
