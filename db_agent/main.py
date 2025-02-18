@@ -1,7 +1,9 @@
 from dotenv import load_dotenv
-from typing import TypedDict, Annotated
+from psycopg.abc import Query
+from typing import LiteralString, TypedDict, Annotated
 import json
 import logging
+from psycopg.abc import Query
 from psycopg_pool import ConnectionPool
 from langgraph.prebuilt import (
     ToolNode,
@@ -45,11 +47,11 @@ def stream_graph_updates(
 
 
 @tool
-def run_sql_tool(query: str):
+def run_sql_tool(query: Annotated[LiteralString, "The SQL query to be executed"]):
     """Runs a SQL query against the connected Postgres database."""
     with connection_pool.connection() as db:
         with db.cursor() as cursor:
-            cursor.execute(query)  # type: ignore
+            cursor.execute(query)
             if cursor.description:
                 return cursor.fetchall()
             db.commit()
