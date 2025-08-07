@@ -1,10 +1,10 @@
-from dotenv import load_dotenv
-from psycopg.abc import Query
-from typing import LiteralString, TypedDict, Annotated
-import json
+import asyncio
+from pydantic import Field
+from langchain_core.tools import BaseTool
+from pydantic import SecretStr
+from typing import TypedDict, Annotated
 import logging
-from psycopg.abc import Query
-from psycopg_pool import ConnectionPool
+from psycopg_pool.pool_async import AsyncConnectionPool
 from langgraph.prebuilt import (
     ToolNode,
     tools_condition,
@@ -12,105 +12,107 @@ from langgraph.prebuilt import (
 from langgraph.graph import StateGraph, add_messages, START, END
 from langgraph.graph.state import CompiledStateGraph, RunnableConfig
 from langchain_openai.chat_models import ChatOpenAI
-from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, ToolMessage, BaseMessage
+from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.language_models import BaseChatModel
-from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 import os
-
-
-load_dotenv()
-
-connection_pool = ConnectionPool(
-    conninfo=os.getenv("DATABASE_URL", ""),
-    kwargs={"autocommit": True, "prepare_threshold": 0},
-)
+from psycopg import AsyncConnection
+from psycopg.rows import TupleRow
 
 
 class DatabaseState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
-    database_schema: Annotated[dict, "The current database schema"]
 
 
-def stream_graph_updates(
+async def stream_graph_updates(
     graph: CompiledStateGraph,
     user_input: str,
     config: RunnableConfig | None = None,
 ):
-    events = graph.stream(
+    events = graph.astream(
         input={"messages": [HumanMessage(user_input)]},
         config=config,
         stream_mode="values",
     )
-    for event in events:
+    async for event in events:
         event["messages"][-1].pretty_print()
 
 
-@tool
-def run_sql_tool(query: Annotated[LiteralString, "The SQL query to be executed"]):
-    """Runs a SQL query against the connected Postgres database."""
-    with connection_pool.connection() as db:
-        with db.cursor() as cursor:
-            cursor.execute(query)
-            if cursor.description:
-                return cursor.fetchall()
-            db.commit()
-            return "Query executed successfully"
+class SQLTools:
+    def __init__(self, connection_pool: AsyncConnectionPool):
+        self.connection_pool = connection_pool
 
+    async def run_sql_tool(
+        self, query: str = Field(description="The SQL query to be executed")
+    ):
+        """Runs a SQL query against the connected Postgres database."""
+        async with self.connection_pool.connection() as db:
+            async with db.cursor() as cursor:
+                await cursor.execute(query)
+                if cursor.description:
+                    return cursor.fetchall()
+                await db.commit()
+                return "Query executed successfully"
 
-@tool
-def get_current_database_schema_tool():
-    """Returns the current database schema."""
-    with connection_pool.connection() as db:
-        with db.cursor() as cursor:
-            cursor.execute(
+    async def get_current_database_schema_tool(self):
+        """Returns the current database schema."""
+        async with self.connection_pool.connection() as db:
+            async with db.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    SELECT table_name, column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name, ordinal_position;
                 """
-                SELECT table_name, column_name, data_type
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                ORDER BY table_name, ordinal_position;
-            """
+                )
+                schema = await cursor.fetchall()
+
+        schema_dict = {}
+        for table_name, column_name, data_type in schema:
+            if table_name not in schema_dict:
+                schema_dict[table_name] = []
+            schema_dict[table_name].append(
+                {"column_name": column_name, "data_type": data_type}
             )
-            schema = cursor.fetchall()
 
-    schema_dict = {}
-    for table_name, column_name, data_type in schema:
-        if table_name not in schema_dict:
-            schema_dict[table_name] = []
-        schema_dict[table_name].append(
-            {"column_name": column_name, "data_type": data_type}
-        )
-
-    return schema_dict
+        return schema_dict
 
 
-def create_database_node(llm: BaseChatModel):
-    llm_with_tools = llm.bind_tools([run_sql_tool, get_current_database_schema_tool])
+def create_call_llm_node(llm: BaseChatModel, tools: list[BaseTool]):
+    llm_with_tools = llm.bind_tools(tools)
 
-    def database_node(state: DatabaseState) -> DatabaseState:
-        for message in reversed(state["messages"]):
-            if (
-                isinstance(message, ToolMessage)
-                and message.name == get_current_database_schema_tool.name
-            ):
-                state["database_schema"] = json.loads(str(message.content))
-                break
-
+    def call_llm_node(state: DatabaseState) -> DatabaseState:
         result = llm_with_tools.invoke(state["messages"])
         return {
             "messages": [result],
-            "database_schema": state.get("database_schema", {}),
         }
 
-    return database_node
+    return call_llm_node
 
+async def main():
+    connection_pool = AsyncConnectionPool[AsyncConnection[TupleRow]](
+        conninfo=os.getenv("DATABASE_URL", ""),
+        kwargs={"autocommit": True, "prepare_threshold": 0},
+    )
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        api_key=SecretStr(os.getenv("OPENAI_API_KEY", "")),
+    )
+    sql_tools = SQLTools(connection_pool)
+    tools = [
+        sql_tools.run_sql_tool,
+        sql_tools.get_current_database_schema_tool,
+    ]
 
-if __name__ == "__main__":
-    llm = ChatOpenAI(model="gpt-4o-mini")
-
-    tools_node = ToolNode(tools=[run_sql_tool, get_current_database_schema_tool])
+    tools_node = ToolNode(
+        tools=[
+            sql_tools.run_sql_tool,
+            sql_tools.get_current_database_schema_tool,
+        ]
+    )
     builder = StateGraph(DatabaseState)
-    builder.add_node("database_node", create_database_node(llm))
+    builder.add_node("database_node", create_call_llm_node(llm, tools))
     builder.add_node("tools", tools_node)
 
     builder.add_edge(START, "database_node")
@@ -118,11 +120,12 @@ if __name__ == "__main__":
     builder.add_edge("tools", "database_node")
     builder.add_edge("database_node", END)
 
-    with connection_pool.connection() as db:
-        checkpointer = PostgresSaver(conn=db)
-
-        checkpointer.setup()
-
+    async with (
+        AsyncPostgresSaver.from_conn_string(
+            os.getenv("DATABASE_URL", "")
+        ) as checkpointer,
+    ):
+        await checkpointer.setup()
         graph = builder.compile(checkpointer=checkpointer)
         try:
             while True:
@@ -131,8 +134,12 @@ if __name__ == "__main__":
                     print("bye")
                     break
 
-                stream_graph_updates(
+                await stream_graph_updates(
                     graph, user_input, {"configurable": {"thread_id": "14"}}
                 )
         except Exception:
             logging.exception("An error occurred")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
