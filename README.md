@@ -3,24 +3,14 @@ It also saves context between runs
 
 ## Installation
 
-We use poetry to manage our dependencies.
+We use uv to manage our dependencies.
 
 ```bash
-poetry install
+uv sync
 ```
 
 ## Run
 
-First, create a .env file at the project root:
-
 ```
-# if you're running the database from the compose file, this database url will work
-DATABASE_URL=postgresql://user:password@localhost:5432/database
-OPENAI_API_KEY=your_openai_api_key
-```
-
-Then, run the following command to start the program:
-
-```
-poetry run python db_agent/main.py
+uv run python db_agent/main.py
 ```
